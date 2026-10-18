@@ -578,10 +578,12 @@ def parsear_json_rutina(json_str):
     df = pd.DataFrame(filas)
     return fecha, tipo_sesion, df
 
+APP_VERSION = "v1.01"
+
 # ==========================================
 # HEADER DE LA APP
 # ==========================================
-st.markdown("### 🧗 Climbing & Gym Tracker")
+st.markdown(f"### 🧗 Climbing & Gym Tracker `{APP_VERSION}`")
 st.caption("🛡️ **L5-S1 Edition** | Control de cargas, dolor lumbar y progresión en roca/resina")
 
 # Estado de navegación: por defecto muestra el menú de actividades
