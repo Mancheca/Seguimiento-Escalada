@@ -1,0 +1,25 @@
+services:
+  gym-tracker:
+    image: ghcr.io/mancheca/seguimiento-escalada:latest
+    container_name: gym_climbing_tracker
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      - STREAMLIT_THEME_BASE=dark
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+
+  # Opcional: Watchtower comprueba automáticamente cada hora si hay cambios
+  # en GitHub/Docker y actualiza la app sola sin tirar tus datos.
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600 --cleanup gym_climbing_tracker
+
