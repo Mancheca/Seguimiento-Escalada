@@ -614,7 +614,13 @@ if seccion == "menu":
             st.session_state["seccion_activa"] = "history"
             st.rerun()
 
-    st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
+    # Botón de ayuda para pedir rutinas a Gemini
+    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
+    if st.button("💡 ¿Cómo pedir una nueva rutina a Gemini?", use_container_width=True):
+        st.session_state["seccion_activa"] = "help_gemini"
+        st.rerun()
+
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
     st.caption("💡 Todo adaptado a móvil. Entra en tu sesión para registrar datos sin scroll vertical innecesario.")
 
 else:
@@ -1384,4 +1390,71 @@ elif seccion == "history":
 
         st.markdown("---")
         st.caption(f"📁 Ruta de base de datos activa: `{DB_FILE.resolve()}` | Persistido en volumen Docker.")
+
+# ==========================================
+# SECCIÓN 5: 💡 GUÍA & AYUDA: PEDIR RUTINAS A GEMINI
+# ==========================================
+if seccion == "help_gemini":
+    st.markdown("#### 💡 Cómo pedir una nueva rutina a Gemini")
+    st.caption("Copia este prompt, pégalo en Gemini y obtendrás el JSON 100% compatible con la app.")
+
+    st.markdown("""
+    > [!TIP]
+    > **Gemini generará un código JSON exacto**. Solo tendrás que copiarlo, entrar en **🏋️ Gimnasio**, pegarlo en la caja de texto y pulsar **Cargar Rutina desde JSON**.
+    """)
+
+    st.markdown("##### 1. Prompt listo para copiar:")
+    prompt_texto = """Actúa como un entrenador personal de fuerza especializado en escalada y biomecánica con protección estricta de la columna lumbar (patología L5-S1 / discopatía).
+
+Quiero una rutina para hoy con las siguientes características:
+- Objetivo: [Fuerza / Hipertrofia / Torso / Pierna / Antagonistas para escalada]
+- Nivel de fatiga actual: [Bajo / Moderado / Alto]
+- Restricciones L5-S1: Cero compresión axial pesada sobre la columna. Nada de sentadillas con barra trasnuca ni peso muerto convencional pesado. Preferencia por ejercicios con apoyo de pecho, unilaterales y trabajo de core anti-movimiento.
+
+Genera la respuesta ÚNICAMENTE con un bloque de código JSON con esta estructura exacta para que pueda importarlo directamente en mi aplicación:
+
+```json
+{
+  "fecha": "2026-10-18",
+  "tipo_sesion": "Gym - Torso & Antagonistas L5-S1",
+  "ejercicios": [
+    {
+      "bloque": "Calentamiento & Activación",
+      "nombre": "Deadbug Estático",
+      "series": 3,
+      "reps_objetivo": 10,
+      "peso_sugerido": 0.0,
+      "lumbar_tip": "Presionar la zona lumbar plana contra el suelo; sin arco."
+    },
+    {
+      "bloque": "Fuerza Principal",
+      "nombre": "Remo con Pecho Apoyado",
+      "series": 4,
+      "reps_objetivo": 8,
+      "peso_sugerido": 45.0,
+      "lumbar_tip": "Pecho firme contra el banco a 30-45°. Cero tirón lumbar."
+    },
+    {
+      "bloque": "Accesorios",
+      "nombre": "Press Militar Half-Kneeling",
+      "series": 3,
+      "reps_objetivo": 10,
+      "peso_sugerido": 16.0,
+      "lumbar_tip": "Glúteo de la pierna retrasada bloqueado para fijar la pelvis."
+    }
+  ]
+}
+```
+Solo responde con el bloque JSON, sin texto de saludo adicional."""
+
+    st.code(prompt_texto, language="markdown")
+
+    st.markdown("##### 2. ¿Cómo importarlo en la App?")
+    st.markdown("""
+    1. **Copia el JSON** que te devuelva Gemini.
+    2. Vuelve al menú y pulsa **🏋️ Gimnasio**.
+    3. Pulsa en **📋 Cargar Rutina desde JSON**.
+    4. Pega el texto y pulsa **Cargar Rutina desde JSON**.
+    5. La app comprobará automáticamente si ya tienes pesos previos registrados para esos ejercicios y te los rellenará solos.
+    """)
 
