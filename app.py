@@ -407,10 +407,65 @@ def init_db():
                 notas TEXT
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS borrador_gym (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                fecha TEXT,
+                tipo_sesion TEXT,
+                rutina_id INTEGER,
+                datos_json TEXT,
+                actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
     conn.close()
 
 # Inicializar BD al arrancar
 init_db()
+
+def guardar_borrador_gym(fecha, tipo_sesion, rutina_id, df_datos):
+    """Guarda automáticamente la rutina activa en la BD para que persista aunque se recargue o cierre el navegador."""
+    try:
+        conn = get_db_connection()
+        datos_json = df_datos.to_json(orient="records", force_ascii=False)
+        with conn:
+            conn.execute("""
+                INSERT INTO borrador_gym (id, fecha, tipo_sesion, rutina_id, datos_json, actualizado_en)
+                VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    fecha=excluded.fecha,
+                    tipo_sesion=excluded.tipo_sesion,
+                    rutina_id=excluded.rutina_id,
+                    datos_json=excluded.datos_json,
+                    actualizado_en=CURRENT_TIMESTAMP;
+            """, (str(fecha), str(tipo_sesion), int(rutina_id), datos_json))
+        conn.close()
+    except Exception:
+        pass
+
+def cargar_borrador_gym():
+    """Recupera el borrador de entrenamiento en curso desde la BD si existe."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT fecha, tipo_sesion, rutina_id, datos_json FROM borrador_gym WHERE id = 1;")
+        fila = cur.fetchone()
+        conn.close()
+        if fila and fila["datos_json"]:
+            df = pd.read_json(fila["datos_json"], orient="records")
+            return fila["fecha"], fila["tipo_sesion"], fila["rutina_id"], df
+    except Exception:
+        pass
+    return None
+
+def limpiar_borrador_gym():
+    """Elimina el borrador de la BD al guardar la sesión definitivamente o descartarla."""
+    try:
+        conn = get_db_connection()
+        with conn:
+            conn.execute("DELETE FROM borrador_gym WHERE id = 1;")
+        conn.close()
+    except Exception:
+        pass
 
 def apply_plotly_dark_theme(fig, title=None, height=360):
     fig.update_layout(
@@ -578,13 +633,26 @@ def parsear_json_rutina(json_str):
     df = pd.DataFrame(filas)
     return fecha, tipo_sesion, df
 
-APP_VERSION = "v1.01"
+APP_VERSION = "v1.02"
 
 # ==========================================
 # HEADER DE LA APP
 # ==========================================
 st.markdown(f"### 🧗 Climbing & Gym Tracker `{APP_VERSION}`")
 st.caption("🛡️ **L5-S1 Edition** | Control de cargas, dolor lumbar y progresión en roca/resina")
+
+# Restaurar borrador de entrenamiento guardado si el usuario salió de la app
+if "gym_editor_df" not in st.session_state:
+    borrador = cargar_borrador_gym()
+    if borrador:
+        b_fecha, b_tipo, b_rutina_id, b_df = borrador
+        st.session_state["gym_fecha"] = b_fecha
+        st.session_state["gym_tipo_sesion"] = b_tipo
+        st.session_state["gym_rutina_id"] = b_rutina_id
+        st.session_state["gym_editor_df"] = b_df
+        # Si había una rutina en curso, entrar directamente en el gimnasio
+        if "seccion_activa" not in st.session_state:
+            st.session_state["seccion_activa"] = "gym"
 
 # Estado de navegación: por defecto muestra el menú de actividades
 if "seccion_activa" not in st.session_state:
@@ -693,10 +761,14 @@ if seccion == "gym":
                         "Cadena Posterior": alt_cadena_post
                     }
                     df_base = generar_rutina_base_l5s1(seleccionadas)
-                    st.session_state["gym_fecha"] = str(datetime.date.today())
-                    st.session_state["gym_tipo_sesion"] = "Rutina Base Post-Vacaciones (L5-S1)"
+                    f_hoy = str(datetime.date.today())
+                    t_ses = "Rutina Base Post-Vacaciones (L5-S1)"
+                    r_id = st.session_state.get("gym_rutina_id", 0) + 1
+                    st.session_state["gym_fecha"] = f_hoy
+                    st.session_state["gym_tipo_sesion"] = t_ses
                     st.session_state["gym_editor_df"] = df_base
-                    st.session_state["gym_rutina_id"] = st.session_state.get("gym_rutina_id", 0) + 1
+                    st.session_state["gym_rutina_id"] = r_id
+                    guardar_borrador_gym(f_hoy, t_ses, r_id, df_base)
                     st.rerun()
 
         with col_opt2:
@@ -720,10 +792,12 @@ if seccion == "gym":
                     if json_input.strip():
                         try:
                             f_json, t_json, df_json = parsear_json_rutina(json_input)
+                            r_id = st.session_state.get("gym_rutina_id", 0) + 1
                             st.session_state["gym_fecha"] = f_json
                             st.session_state["gym_tipo_sesion"] = t_json
                             st.session_state["gym_editor_df"] = df_json
-                            st.session_state["gym_rutina_id"] = st.session_state.get("gym_rutina_id", 0) + 1
+                            st.session_state["gym_rutina_id"] = r_id
+                            guardar_borrador_gym(f_json, t_json, r_id, df_json)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al procesar JSON: {str(e)}")
@@ -737,6 +811,7 @@ if seccion == "gym":
             st.markdown(f"#### 🏋️ {st.session_state.get('gym_tipo_sesion', 'Rutina de Gimnasio')}")
         with col_hdr_r:
             if st.button("🔄 Cambiar Rutina", use_container_width=True):
+                limpiar_borrador_gym()
                 del st.session_state["gym_editor_df"]
                 st.rerun()
 
@@ -804,7 +879,7 @@ if seccion == "gym":
 
                         c_rep, c_kg, c_rir = st.columns(3)
                         with c_rep:
-                            st.number_input(
+                            n_rep = st.number_input(
                                 "Reps",
                                 min_value=0,
                                 max_value=300,
@@ -812,8 +887,12 @@ if seccion == "gym":
                                 step=1,
                                 key=f"reps_{rutina_id}_{idx}"
                             )
+                            if n_rep != row["reps_reales"]:
+                                df_sesion.at[idx, "reps_reales"] = n_rep
+                                guardar_borrador_gym(fecha_sesion, tipo_sesion, rutina_id, df_sesion)
+
                         with c_kg:
-                            st.number_input(
+                            n_kg = st.number_input(
                                 "Kg",
                                 min_value=0.0,
                                 max_value=500.0,
@@ -822,8 +901,12 @@ if seccion == "gym":
                                 format="%.1f",
                                 key=f"peso_{rutina_id}_{idx}"
                             )
+                            if n_kg != row["peso_kg"]:
+                                df_sesion.at[idx, "peso_kg"] = n_kg
+                                guardar_borrador_gym(fecha_sesion, tipo_sesion, rutina_id, df_sesion)
+
                         with c_rir:
-                            st.number_input(
+                            n_rir = st.number_input(
                                 "RIR",
                                 min_value=0,
                                 max_value=5,
@@ -832,14 +915,20 @@ if seccion == "gym":
                                 key=f"rir_{rutina_id}_{idx}",
                                 help="Repeticiones en Reserva"
                             )
+                            if n_rir != row["rir"]:
+                                df_sesion.at[idx, "rir"] = n_rir
+                                guardar_borrador_gym(fecha_sesion, tipo_sesion, rutina_id, df_sesion)
 
                         idx_lumbar = OPCIONES_LUMBAR_GYM.index(row["notas_lumbar"]) if row["notas_lumbar"] in OPCIONES_LUMBAR_GYM else 0
-                        st.selectbox(
+                        n_lumbar = st.selectbox(
                             "🛡️ Control Lumbar L5-S1",
                             options=OPCIONES_LUMBAR_GYM,
                             index=idx_lumbar,
                             key=f"lumbar_{rutina_id}_{idx}"
                         )
+                        if n_lumbar != row["notas_lumbar"]:
+                            df_sesion.at[idx, "notas_lumbar"] = n_lumbar
+                            guardar_borrador_gym(fecha_sesion, tipo_sesion, rutina_id, df_sesion)
         else:
             st.caption("Ajusta reps reales, peso en kg, RIR (reps en reserva) y vigila el estado lumbar.")
             column_config = {
@@ -923,6 +1012,7 @@ if seccion == "gym":
                                 item["notas_lumbar"]
                             ))
                     conn.close()
+                    limpiar_borrador_gym()
                     st.success("✅ ¡Sesión guardada exitosamente en la base de datos!")
                     
                     alertas = [item for item in filas_a_guardar if item["notas_lumbar"] in ["Tensión lumbar", "Molestia (Parar)"]]
@@ -933,6 +1023,7 @@ if seccion == "gym":
 
         with col_clear:
             if st.button("🗑️ Descartar", use_container_width=True):
+                limpiar_borrador_gym()
                 del st.session_state["gym_editor_df"]
                 st.rerun()
 
